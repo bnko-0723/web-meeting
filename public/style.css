@@ -1,170 +1,121 @@
-import express from "express";
-import http from "http";
-import path from "path";
-import { fileURLToPath } from "url";
-import { Server } from "socket.io";
+* { box-sizing: border-box; }
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
-
-app.use(express.static(path.join(__dirname, "public")));
-
-app.get("*splat", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
-const rooms = new Map();
-const MAX_USERS = 6;
-
-io.on("connection", (socket) => {
-
-  socket.on("join-room", ({ roomId, name }, callback) => {
-    roomId = String(roomId || "").trim().slice(0, 100);
-    name = String(name || "").trim().slice(0, 30);
-
-    if (!roomId) {
-      return callback?.({
-        ok: false,
-        error: "部屋IDがありません。"
-      });
-    }
-
-    if (!name) {
-      return callback?.({
-        ok: false,
-        error: "名前を入力してください。"
-      });
-    }
-
-    let room = rooms.get(roomId);
-
-    if (!room) {
-      room = new Map();
-      rooms.set(roomId, room);
-    }
-
-    if (room.size >= MAX_USERS) {
-      return callback?.({
-        ok: false,
-        error: `この部屋は${MAX_USERS}人までです。`
-      });
-    }
-
-    const existingUsers = [...room.entries()].map(
-      ([id, user]) => ({
-        id,
-        name: user.name
-      })
-    );
-
-    room.set(socket.id, {
-      name
-    });
-
-    socket.join(roomId);
-    socket.data.roomId = roomId;
-    socket.data.name = name;
-
-    callback?.({
-      ok: true,
-      isFirst: existingUsers.length === 0,
-      users: existingUsers
-    });
-
-    socket.to(roomId).emit("peer-joined", {
-      id: socket.id,
-      name
-    });
-  });
-
-  // WebRTC offer
-  socket.on("offer", ({ target, offer }) => {
-    if (!target || !offer) return;
-
-    io.to(target).emit("offer", {
-      from: socket.id,
-      offer
-    });
-  });
-
-  // WebRTC answer
-  socket.on("answer", ({ target, answer }) => {
-    if (!target || !answer) return;
-
-    io.to(target).emit("answer", {
-      from: socket.id,
-      answer
-    });
-  });
-
-  // ICE candidate
-  socket.on("ice-candidate", ({ target, candidate }) => {
-    if (!target || !candidate) return;
-
-    io.to(target).emit("ice-candidate", {
-      from: socket.id,
-      candidate
-    });
-  });
-
-  // チャット
-  socket.on("chat-message", ({ message }) => {
-    const roomId = socket.data.roomId;
-    const name = socket.data.name;
-
-    if (!roomId || !name) return;
-
-    const text = String(message || "").trim().slice(0, 500);
-
-    if (!text) return;
-
-    io.to(roomId).emit("chat-message", {
-      id: socket.id,
-      name,
-      message: text,
-      time: new Date().toISOString()
-    });
-  });
-
-  // 退出
-  socket.on("leave-room", () => {
-    leaveRoom(socket);
-  });
-
-  socket.on("disconnect", () => {
-    leaveRoom(socket);
-  });
-});
-
-function leaveRoom(socket) {
-  const roomId = socket.data.roomId;
-
-  if (!roomId) return;
-
-  const room = rooms.get(roomId);
-
-  if (!room) return;
-
-  const user = room.get(socket.id);
-
-  room.delete(socket.id);
-
-  socket.to(roomId).emit("peer-left", {
-    id: socket.id,
-    name: user?.name || "参加者"
-  });
-
-  if (room.size === 0) {
-    rooms.delete(roomId);
-  }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #111827;
+  color: white;
 }
 
-const PORT = process.env.PORT || 3000;
+.app {
+  width: min(1000px, 94vw);
+  margin: 0 auto;
+  padding: 32px 0;
+}
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
-});
+h1 {
+  text-align: center;
+  margin: 0 0 24px;
+}
+
+.card {
+  max-width: 500px;
+  margin: 80px auto;
+  padding: 32px;
+  text-align: center;
+  background: #1f2937;
+  border-radius: 20px;
+}
+
+button {
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 18px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  background: #2563eb;
+  color: white;
+}
+
+button:hover { filter: brightness(1.08); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+
+.secondary { background: #374151; }
+.danger { background: #dc2626; }
+
+.hidden { display: none !important; }
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.room-url {
+  color: #9ca3af;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  margin-top: 4px;
+}
+
+.status {
+  background: #1f2937;
+  padding: 10px 14px;
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+
+.videos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.video-box {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #000;
+}
+
+.video-box video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.video-box span {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: rgba(0,0,0,.6);
+  font-size: 13px;
+}
+
+.controls {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.note {
+  text-align: center;
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+@media (max-width: 650px) {
+  .app { padding: 18px 0; }
+  .videos { grid-template-columns: 1fr; }
+  .topbar { align-items: flex-start; flex-direction: column; }
+  .topbar button { width: 100%; }
+}
