@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>2人だけのビデオ通話</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="app">
+    <h1>2人だけのビデオ通話</h1>
+
+    <section id="home" class="card">
+      <p>URLを作って、相手に送るだけ。</p>
+      <button id="createRoom">通話ルームを作る</button>
+    </section>
+
+    <section id="call" class="hidden">
+      <div class="topbar">
+        <div>
+          <strong>通話ルーム</strong>
+          <div id="roomUrl" class="room-url"></div>
+        </div>
+        <button id="copyLink" class="secondary">URLをコピー</button>
+      </div>
+
+      <div id="status" class="status">接続準備中…</div>
+
+      <div class="videos">
+        <div class="video-box">
+          <video id="remoteVideo" autoplay playsinline></video>
+          <span>相手</span>
+        </div>
+        <div class="video-box local">
+          <video id="localVideo" autoplay muted playsinline></video>
+          <span>あなた</span>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="mute">🎤 ミュート</button>
+        <button id="camera">📷 カメラOFF</button>
+        <button id="hangup" class="danger">☎ 通話終了</button>
+      </div>
+
+      <p class="note">
+        カメラとマイクの許可を求められたら「許可」を押してください。
+      </p>
+    </section>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
