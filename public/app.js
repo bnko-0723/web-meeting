@@ -195,18 +195,19 @@ function createPeerConnection(
   return pc;
 }
 
-async function createOffer(
-  targetId,
-  targetName
-) {
-  const pc =
-    createPeerConnection(
-      targetId,
-      targetName
-    );
+async function joinRoom() {
+  const roomId =
+    getRoomIdFromUrl();
 
-  const offer =
-    await pc.createOffer();
+  myName =
+    nameInput.value.trim();
+
+  if (!roomId) {
+    homeStatus.textContent =
+      "部屋IDがありません。";
+
+    return;
+  }
 
   await pc.setLocalDescription(offer);
 
