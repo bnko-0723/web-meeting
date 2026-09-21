@@ -4,6 +4,7 @@ const home = document.getElementById("home");
 const call = document.getElementById("call");
 
 const nameInput = document.getElementById("nameInput");
+const roomInput = document.getElementById("roomInput");
 const joinButton = document.getElementById("joinButton");
 const homeStatus = document.getElementById("homeStatus");
 
@@ -21,35 +22,22 @@ const chatMessages = document.getElementById("chatMessages");
 const chatInput = document.getElementById("chatInput");
 const sendChat = document.getElementById("sendChat");
 
-const roomId = getRoomIdFromUrl();
-
 let localStream = null;
 let myName = "";
+let currentRoomId = "";
 
 let micOn = true;
 let cameraOn = true;
 
 const peers = new Map();
 const userNames = new Map();
+const pendingCandidates = new Map();
 
 const rtcConfig = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" }
-  ]
 };
-
-function getRoomIdFromUrl() {
-  const parts = location.pathname.split("/").filter(Boolean);
-  return parts[0] || null;
-}
-
-function makeRoomId() {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  return [...bytes]
-    .map(b => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 function setStatus(text) {
   statusEl.textContent = text;
@@ -134,7 +122,7 @@ function createPeerConnection(targetId, targetName) {
       setStatus("通話中");
     }
 
-    if (state === "disconnected" || state === "failed") {
+    if (state === "disconnected" || state === "failed" || state === "closed") {
       removePeer(targetId);
     }
   };
@@ -145,6 +133,20 @@ function createPeerConnection(targetId, targetName) {
   });
 
   return pc;
+}
+
+async function addPendingCandidates(targetId, pc) {
+  const candidates = pendingCandidates.get(targetId) || [];
+
+  for (const candidate of candidates) {
+    try {
+      await pc.addIceCandidate(candidate);
+    } catch (error) {
+      console.error("ICE candidate error:", error);
+    }
+  }
+
+  pendingCandidates.delete(targetId);
 }
 
 async function createOffer(targetId, targetName) {
@@ -170,21 +172,26 @@ function removePeer(id) {
 
   removeVideoElement(id);
   userNames.delete(id);
+  pendingCandidates.delete(id);
 }
 
 async function joinRoom() {
+  const roomId = roomInput.value.trim();
+  myName = nameInput.value.trim();
+
   if (!roomId) {
-    homeStatus.textContent = "部屋IDがありません。";
+    homeStatus.textContent = "部屋番号を入力してください。";
+    roomInput.focus();
     return;
   }
-
-  myName = nameInput.value.trim();
 
   if (!myName) {
     homeStatus.textContent = "名前を入力してください。";
     nameInput.focus();
     return;
   }
+
+  currentRoomId = roomId;
 
   joinButton.disabled = true;
   homeStatus.textContent = "";
@@ -198,7 +205,7 @@ async function joinRoom() {
     home.classList.add("hidden");
     call.classList.remove("hidden");
 
-    roomUrl.textContent = location.href;
+    roomUrl.textContent = location.origin;
 
     createVideoElement(
       "local",
@@ -221,6 +228,7 @@ async function joinRoom() {
           setStatus(result?.error || "部屋に入れませんでした。");
 
           localStream.getTracks().forEach(track => track.stop());
+          localStream = null;
 
           call.classList.add("hidden");
           home.classList.remove("hidden");
@@ -265,13 +273,16 @@ nameInput.addEventListener("keydown", (event) => {
   }
 });
 
-socket.on("peer-joined", async ({ id, name }) => {
+roomInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    joinRoom();
+  }
+});
+
+socket.on("peer-joined", ({ id, name }) => {
   userNames.set(id, name);
 
   setStatus(`${name} が参加しました。接続中…`);
-
-  // 新しく入った人には、すでにいる側から接続する
-  await createOffer(id, name);
 });
 
 socket.on("offer", async ({ from, offer }) => {
@@ -279,16 +290,23 @@ socket.on("offer", async ({ from, offer }) => {
 
   const pc = createPeerConnection(from, name);
 
-  await pc.setRemoteDescription(offer);
+  try {
+    await pc.setRemoteDescription(offer);
 
-  const answer = await pc.createAnswer();
+    await addPendingCandidates(from, pc);
 
-  await pc.setLocalDescription(answer);
+    const answer = await pc.createAnswer();
 
-  socket.emit("answer", {
-    target: from,
-    answer
-  });
+    await pc.setLocalDescription(answer);
+
+    socket.emit("answer", {
+      target: from,
+      answer
+    });
+
+  } catch (error) {
+    console.error("Offer error:", error);
+  }
 });
 
 socket.on("answer", async ({ from, answer }) => {
@@ -298,6 +316,9 @@ socket.on("answer", async ({ from, answer }) => {
 
   try {
     await peer.pc.setRemoteDescription(answer);
+
+    await addPendingCandidates(from, peer.pc);
+
   } catch (error) {
     console.error("Answer error:", error);
   }
@@ -306,7 +327,14 @@ socket.on("answer", async ({ from, answer }) => {
 socket.on("ice-candidate", async ({ from, candidate }) => {
   const peer = peers.get(from);
 
-  if (!peer) return;
+  if (!peer || !peer.pc.remoteDescription) {
+    if (!pendingCandidates.has(from)) {
+      pendingCandidates.set(from, []);
+    }
+
+    pendingCandidates.get(from).push(candidate);
+    return;
+  }
 
   try {
     await peer.pc.addIceCandidate(candidate);
@@ -347,7 +375,7 @@ cameraButton.addEventListener("click", () => {
 
 copyLink.addEventListener("click", async () => {
   try {
-    await navigator.clipboard.writeText(location.href);
+    await navigator.clipboard.writeText(location.origin);
 
     copyLink.textContent = "コピーしました！";
 
@@ -416,9 +444,3 @@ hangupButton.addEventListener("click", () => {
 
   location.href = "/";
 });
-
-if (!roomId) {
-  // トップページ
-} else {
-  // 名前を入力してから参加する
-}
