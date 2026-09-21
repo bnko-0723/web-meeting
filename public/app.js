@@ -229,18 +229,20 @@ function removePeer(id) {
 }
 
 async function joinRoom() {
-  const roomId =
-    getRoomIdFromUrl();
+  let roomId = getRoomIdFromUrl();
+
+  if (!roomId) {
+    roomId = makeRoomId();
+
+    history.replaceState(
+      {},
+      "",
+      "/" + roomId
+    );
+  }
 
   myName =
     nameInput.value.trim();
-
-  if (!roomId) {
-    homeStatus.textContent =
-      "部屋IDがありません。";
-
-    return;
-  }
 
   if (!myName) {
     homeStatus.textContent =
