@@ -1,55 +1,101 @@
 <!doctype html>
+
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>2人だけのビデオ通話</title>
+  <title>みんなのビデオ通話</title>
   <link rel="stylesheet" href="/style.css">
 </head>
+
 <body>
   <main class="app">
-    <h1>2人だけのビデオ通話</h1>
 
-    <section id="home" class="card">
-      <p>URLを作って、相手に送るだけ。</p>
-      <button id="createRoom">通話ルームを作る</button>
-    </section>
+```
+<section id="home" class="card">
+  <h1>みんなのビデオ通話</h1>
+  <p>名前を入力して通話に参加しよう。</p>
 
-    <section id="call" class="hidden">
-      <div class="topbar">
-        <div>
-          <strong>通話ルーム</strong>
-          <div id="roomUrl" class="room-url"></div>
-        </div>
-        <button id="copyLink" class="secondary">URLをコピー</button>
-      </div>
+  <input
+    id="nameInput"
+    type="text"
+    maxlength="30"
+    placeholder="名前を入力"
+    autocomplete="off"
+  >
 
-      <div id="status" class="status">接続準備中…</div>
+  <button id="joinButton">通話に参加</button>
 
-      <div class="videos">
-        <div class="video-box">
-          <video id="remoteVideo" autoplay playsinline></video>
-          <span>相手</span>
-        </div>
-        <div class="video-box local">
-          <video id="localVideo" autoplay muted playsinline></video>
-          <span>あなた</span>
-        </div>
-      </div>
+  <p id="homeStatus" class="error"></p>
+</section>
+
+<section id="call" class="hidden">
+
+  <div class="topbar">
+    <div>
+      <strong>通話ルーム</strong>
+      <div id="roomUrl" class="room-url"></div>
+    </div>
+
+    <button id="copyLink" class="secondary">
+      🔗 URLをコピー
+    </button>
+  </div>
+
+  <div id="status" class="status">
+    接続準備中…
+  </div>
+
+  <div class="main-area">
+
+    <div class="video-area">
+      <div id="videos" class="videos"></div>
 
       <div class="controls">
         <button id="mute">🎤 ミュート</button>
         <button id="camera">📷 カメラOFF</button>
-        <button id="hangup" class="danger">☎ 通話終了</button>
+        <button id="hangup" class="danger">
+          ☎ 通話終了
+        </button>
+      </div>
+    </div>
+
+    <aside class="chat">
+
+      <h2>💬 チャット</h2>
+
+      <div id="chatMessages" class="chat-messages"></div>
+
+      <div class="chat-input-area">
+        <input
+          id="chatInput"
+          type="text"
+          maxlength="500"
+          placeholder="メッセージを入力"
+          autocomplete="off"
+        >
+
+        <button id="sendChat">
+          送信
+        </button>
       </div>
 
-      <p class="note">
-        カメラとマイクの許可を求められたら「許可」を押してください。
-      </p>
-    </section>
+    </aside>
+
+  </div>
+
+  <p class="note">
+    カメラとマイクの許可を求められたら必ず「許可」を押してください。
+  </p>
+
+</section>
+```
+
   </main>
 
   <script src="/socket.io/socket.io.js"></script>
+
   <script src="/app.js"></script>
+
 </body>
 </html>
