@@ -37,6 +37,7 @@ const rtcConfig = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" }
+  ]
 };
 
 function setStatus(text) {
@@ -48,7 +49,11 @@ function createVideoElement(id, name, stream, isLocal = false) {
 
   if (existing) {
     const video = existing.querySelector("video");
-    if (video) video.srcObject = stream;
+
+    if (video) {
+      video.srcObject = stream;
+    }
+
     return;
   }
 
@@ -67,7 +72,9 @@ function createVideoElement(id, name, stream, isLocal = false) {
   }
 
   const label = document.createElement("span");
-  label.textContent = isLocal ? `${name}（あなた）` : name;
+  label.textContent = isLocal
+    ? `${name}（あなた）`
+    : name;
 
   box.appendChild(video);
   box.appendChild(label);
@@ -107,7 +114,9 @@ function createPeerConnection(targetId, targetName) {
   };
 
   pc.onicecandidate = (event) => {
-    if (!event.candidate) return;
+    if (!event.candidate) {
+      return;
+    }
 
     socket.emit("ice-candidate", {
       target: targetId,
@@ -122,35 +131,28 @@ function createPeerConnection(targetId, targetName) {
       setStatus("通話中");
     }
 
-    if (state === "disconnected" || state === "failed" || state === "closed") {
+    if (
+      state === "disconnected" ||
+      state === "failed" ||
+      state === "closed"
+    ) {
       removePeer(targetId);
     }
   };
 
   peers.set(targetId, {
-    pc,
+    pc: pc,
     name: targetName || "参加者"
   });
 
   return pc;
 }
 
-async function addPendingCandidates(targetId, pc) {
-  const candidates = pendingCandidates.get(targetId) || [];
-
-  for (const candidate of candidates) {
-    try {
-      await pc.addIceCandidate(candidate);
-    } catch (error) {
-      console.error("ICE candidate error:", error);
-    }
-  }
-
-  pendingCandidates.delete(targetId);
-}
-
 async function createOffer(targetId, targetName) {
-  const pc = createPeerConnection(targetId, targetName);
+  const pc = createPeerConnection(
+    targetId,
+    targetName
+  );
 
   const offer = await pc.createOffer();
 
@@ -158,7 +160,7 @@ async function createOffer(targetId, targetName) {
 
   socket.emit("offer", {
     target: targetId,
-    offer
+    offer: offer
   });
 }
 
@@ -177,30 +179,36 @@ function removePeer(id) {
 
 async function joinRoom() {
   const roomId = roomInput.value.trim();
-  myName = nameInput.value.trim();
+  const name = nameInput.value.trim();
 
   if (!roomId) {
-    homeStatus.textContent = "部屋番号を入力してください。";
+    homeStatus.textContent =
+      "部屋番号を入力してください。";
+
     roomInput.focus();
     return;
   }
 
-  if (!myName) {
-    homeStatus.textContent = "名前を入力してください。";
+  if (!name) {
+    homeStatus.textContent =
+      "名前を入力してください。";
+
     nameInput.focus();
     return;
   }
 
   currentRoomId = roomId;
+  myName = name;
 
   joinButton.disabled = true;
   homeStatus.textContent = "";
 
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true
-    });
+    localStream =
+      await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true
+      });
 
     home.classList.add("hidden");
     call.classList.remove("hidden");
@@ -219,15 +227,20 @@ async function joinRoom() {
     socket.emit(
       "join-room",
       {
-        roomId,
+        roomId: currentRoomId,
         name: myName
       },
       async (result) => {
+        if (!result || !result.ok) {
+          setStatus(
+            result?.error ||
+            "部屋に入れませんでした。"
+          );
 
-        if (!result?.ok) {
-          setStatus(result?.error || "部屋に入れませんでした。");
+          localStream
+            .getTracks()
+            .forEach(track => track.stop());
 
-          localStream.getTracks().forEach(track => track.stop());
           localStream = null;
 
           call.classList.add("hidden");
@@ -239,7 +252,10 @@ async function joinRoom() {
         }
 
         for (const user of result.users || []) {
-          userNames.set(user.id, user.name);
+          userNames.set(
+            user.id,
+            user.name
+          );
 
           await createOffer(
             user.id,
@@ -247,10 +263,14 @@ async function joinRoom() {
           );
         }
 
-        if (result.users?.length > 0) {
-          setStatus("参加者に接続しています…");
+        if ((result.users || []).length > 0) {
+          setStatus(
+            "参加者に接続しています…"
+          );
         } else {
-          setStatus("参加しました。ほかの人を待っています…");
+          setStatus(
+            "参加しました。ほかの人を待っています…"
+          );
         }
       }
     );
@@ -265,182 +285,292 @@ async function joinRoom() {
   }
 }
 
-joinButton.addEventListener("click", joinRoom);
+joinButton.addEventListener(
+  "click",
+  joinRoom
+);
 
-nameInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    joinRoom();
+nameInput.addEventListener(
+  "keydown",
+  (event) => {
+    if (event.key === "Enter") {
+      joinRoom();
+    }
   }
-});
+);
 
-roomInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    joinRoom();
+roomInput.addEventListener(
+  "keydown",
+  (event) => {
+    if (event.key === "Enter") {
+      joinRoom();
+    }
   }
-});
+);
 
-socket.on("peer-joined", ({ id, name }) => {
-  userNames.set(id, name);
+socket.on(
+  "peer-joined",
+  ({ id, name }) => {
+    userNames.set(id, name);
 
-  setStatus(`${name} が参加しました。接続中…`);
-});
-
-socket.on("offer", async ({ from, offer }) => {
-  const name = userNames.get(from) || "参加者";
-
-  const pc = createPeerConnection(from, name);
-
-  try {
-    await pc.setRemoteDescription(offer);
-
-    await addPendingCandidates(from, pc);
-
-    const answer = await pc.createAnswer();
-
-    await pc.setLocalDescription(answer);
-
-    socket.emit("answer", {
-      target: from,
-      answer
-    });
-
-  } catch (error) {
-    console.error("Offer error:", error);
+    setStatus(
+      `${name} が参加しました。接続中…`
+    );
   }
-});
+);
 
-socket.on("answer", async ({ from, answer }) => {
-  const peer = peers.get(from);
+socket.on(
+  "offer",
+  async ({ from, offer }) => {
+    const name =
+      userNames.get(from) || "参加者";
 
-  if (!peer) return;
+    const pc = createPeerConnection(
+      from,
+      name
+    );
 
-  try {
-    await peer.pc.setRemoteDescription(answer);
+    try {
+      await pc.setRemoteDescription(offer);
 
-    await addPendingCandidates(from, peer.pc);
+      const answer =
+        await pc.createAnswer();
 
-  } catch (error) {
-    console.error("Answer error:", error);
+      await pc.setLocalDescription(answer);
+
+      socket.emit("answer", {
+        target: from,
+        answer: answer
+      });
+
+    } catch (error) {
+      console.error(
+        "Offer error:",
+        error
+      );
+    }
   }
-});
+);
 
-socket.on("ice-candidate", async ({ from, candidate }) => {
-  const peer = peers.get(from);
+socket.on(
+  "answer",
+  async ({ from, answer }) => {
+    const peer = peers.get(from);
 
-  if (!peer || !peer.pc.remoteDescription) {
-    if (!pendingCandidates.has(from)) {
-      pendingCandidates.set(from, []);
+    if (!peer) {
+      return;
     }
 
-    pendingCandidates.get(from).push(candidate);
+    try {
+      await peer.pc.setRemoteDescription(
+        answer
+      );
+    } catch (error) {
+      console.error(
+        "Answer error:",
+        error
+      );
+    }
+  }
+);
+
+socket.on(
+  "ice-candidate",
+  async ({ from, candidate }) => {
+    const peer = peers.get(from);
+
+    if (!peer) {
+      if (!pendingCandidates.has(from)) {
+        pendingCandidates.set(from, []);
+      }
+
+      pendingCandidates
+        .get(from)
+        .push(candidate);
+
+      return;
+    }
+
+    if (!peer.pc.remoteDescription) {
+      if (!pendingCandidates.has(from)) {
+        pendingCandidates.set(from, []);
+      }
+
+      pendingCandidates
+        .get(from)
+        .push(candidate);
+
+      return;
+    }
+
+    try {
+      await peer.pc.addIceCandidate(
+        candidate
+      );
+    } catch (error) {
+      console.error(
+        "ICE candidate error:",
+        error
+      );
+    }
+  }
+);
+
+socket.on(
+  "peer-left",
+  ({ id, name }) => {
+    removePeer(id);
+
+    setStatus(
+      `${name || "参加者"} が退出しました。`
+    );
+  }
+);
+
+muteButton.addEventListener(
+  "click",
+  () => {
+    micOn = !micOn;
+
+    if (localStream) {
+      localStream
+        .getAudioTracks()
+        .forEach(track => {
+          track.enabled = micOn;
+        });
+    }
+
+    muteButton.textContent =
+      micOn
+        ? "🎤 ミュート"
+        : "🔇 ミュート解除";
+  }
+);
+
+cameraButton.addEventListener(
+  "click",
+  () => {
+    cameraOn = !cameraOn;
+
+    if (localStream) {
+      localStream
+        .getVideoTracks()
+        .forEach(track => {
+          track.enabled = cameraOn;
+        });
+    }
+
+    cameraButton.textContent =
+      cameraOn
+        ? "📷 カメラOFF"
+        : "📷 カメラON";
+  }
+);
+
+copyLink.addEventListener(
+  "click",
+  async () => {
+    try {
+      await navigator.clipboard.writeText(
+        location.origin
+      );
+
+      copyLink.textContent =
+        "コピーしました！";
+
+      setTimeout(() => {
+        copyLink.textContent =
+          "🔗 URLをコピー";
+      }, 1500);
+
+    } catch {
+      alert(
+        "URLをコピーできませんでした。アドレスバーからコピーしてください。"
+      );
+    }
+  }
+);
+
+function sendMessage() {
+  const message =
+    chatInput.value.trim();
+
+  if (!message) {
     return;
   }
 
-  try {
-    await peer.pc.addIceCandidate(candidate);
-  } catch (error) {
-    console.error("ICE candidate error:", error);
-  }
-});
-
-socket.on("peer-left", ({ id, name }) => {
-  removePeer(id);
-
-  setStatus(
-    `${name || "参加者"} が退出しました。`
+  socket.emit(
+    "chat-message",
+    {
+      message: message
+    }
   );
-});
-
-muteButton.addEventListener("click", () => {
-  micOn = !micOn;
-
-  localStream?.getAudioTracks().forEach(track => {
-    track.enabled = micOn;
-  });
-
-  muteButton.textContent =
-    micOn ? "🎤 ミュート" : "🔇 ミュート解除";
-});
-
-cameraButton.addEventListener("click", () => {
-  cameraOn = !cameraOn;
-
-  localStream?.getVideoTracks().forEach(track => {
-    track.enabled = cameraOn;
-  });
-
-  cameraButton.textContent =
-    cameraOn ? "📷 カメラOFF" : "📷 カメラON";
-});
-
-copyLink.addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText(location.origin);
-
-    copyLink.textContent = "コピーしました！";
-
-    setTimeout(() => {
-      copyLink.textContent = "🔗 URLをコピー";
-    }, 1500);
-
-  } catch {
-    alert(
-      "URLをコピーできませんでした。アドレスバーからコピーしてください。"
-    );
-  }
-});
-
-function sendMessage() {
-  const message = chatInput.value.trim();
-
-  if (!message) return;
-
-  socket.emit("chat-message", {
-    message
-  });
 
   chatInput.value = "";
   chatInput.focus();
 }
 
-sendChat.addEventListener("click", sendMessage);
+sendChat.addEventListener(
+  "click",
+  sendMessage
+);
 
-chatInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    sendMessage();
+chatInput.addEventListener(
+  "keydown",
+  (event) => {
+    if (event.key === "Enter") {
+      sendMessage();
+    }
   }
-});
+);
 
-socket.on("chat-message", (data) => {
-  const message = document.createElement("div");
-  message.className = "chat-message";
+socket.on(
+  "chat-message",
+  (data) => {
+    const message =
+      document.createElement("div");
 
-  const name = document.createElement("strong");
-  name.textContent = data.name;
+    message.className =
+      "chat-message";
 
-  const text = document.createElement("div");
-  text.textContent = data.message;
+    const name =
+      document.createElement("strong");
 
-  message.appendChild(name);
-  message.appendChild(text);
+    name.textContent = data.name;
 
-  chatMessages.appendChild(message);
+    const text =
+      document.createElement("div");
 
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-});
+    text.textContent =
+      data.message;
 
-hangupButton.addEventListener("click", () => {
-  socket.emit("leave-room");
+    message.appendChild(name);
+    message.appendChild(text);
 
-  for (const [, peer] of peers) {
-    peer.pc.close();
+    chatMessages.appendChild(message);
+
+    chatMessages.scrollTop =
+      chatMessages.scrollHeight;
   }
+);
 
-  peers.clear();
+hangupButton.addEventListener(
+  "click",
+  () => {
+    socket.emit("leave-room");
 
-  if (localStream) {
-    localStream.getTracks().forEach(track => track.stop());
+    for (const [, peer] of peers) {
+      peer.pc.close();
+    }
+
+    peers.clear();
+
+    if (localStream) {
+      localStream
+        .getTracks()
+        .forEach(track => track.stop());
+    }
+
+    location.href = "/";
   }
-
-  location.href = "/";
-});
+);
