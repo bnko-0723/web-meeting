@@ -18,43 +18,119 @@ app.get("*splat", (req, res) => {
 });
 
 const rooms = new Map();
+const MAX_USERS = 6;
 
 io.on("connection", (socket) => {
-  socket.on("join-room", (roomId, callback) => {
+
+  socket.on("join-room", ({ roomId, name }, callback) => {
     roomId = String(roomId || "").trim().slice(0, 100);
-    if (!roomId) return callback?.({ ok: false, error: "部屋IDがありません。" });
+    name = String(name || "").trim().slice(0, 30);
 
-    const current = rooms.get(roomId) || new Set();
-
-    if (current.size >= 2 && !current.has(socket.id)) {
-      return callback?.({ ok: false, error: "この部屋はすでに2人で使用中です。" });
+    if (!roomId) {
+      return callback?.({
+        ok: false,
+        error: "部屋IDがありません。"
+      });
     }
+
+    if (!name) {
+      return callback?.({
+        ok: false,
+        error: "名前を入力してください。"
+      });
+    }
+
+    let room = rooms.get(roomId);
+
+    if (!room) {
+      room = new Map();
+      rooms.set(roomId, room);
+    }
+
+    if (room.size >= MAX_USERS) {
+      return callback?.({
+        ok: false,
+        error: `この部屋は${MAX_USERS}人までです。`
+      });
+    }
+
+    const existingUsers = [...room.entries()].map(
+      ([id, user]) => ({
+        id,
+        name: user.name
+      })
+    );
+
+    room.set(socket.id, {
+      name
+    });
 
     socket.join(roomId);
     socket.data.roomId = roomId;
-    current.add(socket.id);
-    rooms.set(roomId, current);
+    socket.data.name = name;
 
-    const others = current.size - 1;
-    callback?.({ ok: true, isFirst: others === 0 });
+    callback?.({
+      ok: true,
+      isFirst: existingUsers.length === 0,
+      users: existingUsers
+    });
 
-    if (others > 0) {
-      socket.to(roomId).emit("peer-joined");
-    }
+    socket.to(roomId).emit("peer-joined", {
+      id: socket.id,
+      name
+    });
   });
 
-  socket.on("offer", ({ roomId, offer }) => {
-    socket.to(roomId).emit("offer", offer);
+  // WebRTC offer
+  socket.on("offer", ({ target, offer }) => {
+    if (!target || !offer) return;
+
+    io.to(target).emit("offer", {
+      from: socket.id,
+      offer
+    });
   });
 
-  socket.on("answer", ({ roomId, answer }) => {
-    socket.to(roomId).emit("answer", answer);
+  // WebRTC answer
+  socket.on("answer", ({ target, answer }) => {
+    if (!target || !answer) return;
+
+    io.to(target).emit("answer", {
+      from: socket.id,
+      answer
+    });
   });
 
-  socket.on("ice-candidate", ({ roomId, candidate }) => {
-    socket.to(roomId).emit("ice-candidate", candidate);
+  // ICE candidate
+  socket.on("ice-candidate", ({ target, candidate }) => {
+    if (!target || !candidate) return;
+
+    io.to(target).emit("ice-candidate", {
+      from: socket.id,
+      candidate
+    });
   });
 
+  // チャット
+  socket.on("chat-message", ({ message }) => {
+    const roomId = socket.data.roomId;
+    const name = socket.data.name;
+
+    if (!roomId || !name) return;
+
+    const text = String(message || "").trim().slice(0, 500);
+
+    if (!text) return;
+
+    io.to(roomId).emit("chat-message", {
+      id: socket.id,
+      name,
+      message: text,
+      time: new Date().toISOString()
+    });
+  });
+
+  // 退出
   socket.on("leave-room", () => {
     leaveRoom(socket);
   });
@@ -66,18 +142,29 @@ io.on("connection", (socket) => {
 
 function leaveRoom(socket) {
   const roomId = socket.data.roomId;
+
   if (!roomId) return;
 
   const room = rooms.get(roomId);
+
   if (!room) return;
 
-  room.delete(socket.id);
-  socket.to(roomId).emit("peer-left");
+  const user = room.get(socket.id);
 
-  if (room.size === 0) rooms.delete(roomId);
+  room.delete(socket.id);
+
+  socket.to(roomId).emit("peer-left", {
+    id: socket.id,
+    name: user?.name || "参加者"
+  });
+
+  if (room.size === 0) {
+    rooms.delete(roomId);
+  }
 }
 
 const PORT = process.env.PORT || 3000;
+
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
 });
