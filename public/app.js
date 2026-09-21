@@ -4,7 +4,6 @@ const home = document.getElementById("home");
 const call = document.getElementById("call");
 
 const nameInput = document.getElementById("nameInput");
-const roomInput = document.getElementById("roomInput");
 const joinButton = document.getElementById("joinButton");
 const homeStatus = document.getElementById("homeStatus");
 
@@ -24,45 +23,74 @@ const sendChat = document.getElementById("sendChat");
 
 let localStream = null;
 let myName = "";
-let currentRoomId = "";
 
 let micOn = true;
 let cameraOn = true;
 
 const peers = new Map();
 const userNames = new Map();
-const pendingCandidates = new Map();
 
 const rtcConfig = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" }
+  ]
 };
+
+function getRoomIdFromUrl() {
+  const parts = location.pathname
+    .split("/")
+    .filter(Boolean);
+
+  return parts[0] || null;
+}
+
+function makeRoomId() {
+  const bytes =
+    crypto.getRandomValues(
+      new Uint8Array(16)
+    );
+
+  return [...bytes]
+    .map(b =>
+      b.toString(16).padStart(2, "0")
+    )
+    .join("");
+}
 
 function setStatus(text) {
   statusEl.textContent = text;
 }
 
-function createVideoElement(id, name, stream, isLocal = false) {
-  let box = document.getElementById(`video-${id}`);
+function createVideoElement(
+  id,
+  name,
+  stream,
+  isLocal = false
+) {
+  const existing =
+    document.getElementById(`video-${id}`);
 
-  if (box) {
-    const video = box.querySelector("video");
+  if (existing) {
+    const video =
+      existing.querySelector("video");
 
     if (video) {
       video.srcObject = stream;
-
       video.play().catch(() => {});
     }
 
     return;
   }
 
-  box = document.createElement("div");
+  const box =
+    document.createElement("div");
+
   box.className = "video-box";
   box.id = `video-${id}`;
 
-  const video = document.createElement("video");
+  const video =
+    document.createElement("video");
 
   video.autoplay = true;
   video.playsInline = true;
@@ -72,7 +100,8 @@ function createVideoElement(id, name, stream, isLocal = false) {
     video.muted = true;
   }
 
-  const label = document.createElement("span");
+  const label =
+    document.createElement("span");
 
   label.textContent = isLocal
     ? `${name}（あなた）`
@@ -95,16 +124,20 @@ function removeVideoElement(id) {
   }
 }
 
-function createPeerConnection(targetId, targetName) {
+function createPeerConnection(
+  targetId,
+  targetName
+) {
   if (peers.has(targetId)) {
     return peers.get(targetId).pc;
   }
 
-  const pc = new RTCPeerConnection(rtcConfig);
+  const pc =
+    new RTCPeerConnection(rtcConfig);
 
-  localStream.getTracks().forEach(track => {
+  for (const track of localStream.getTracks()) {
     pc.addTrack(track, localStream);
-  });
+  }
 
   pc.ontrack = event => {
     const stream = event.streams[0];
@@ -132,7 +165,8 @@ function createPeerConnection(targetId, targetName) {
   };
 
   pc.onconnectionstatechange = () => {
-    const state = pc.connectionState;
+    const state =
+      pc.connectionState;
 
     console.log(
       "connection state:",
@@ -161,7 +195,10 @@ function createPeerConnection(targetId, targetName) {
   return pc;
 }
 
-async function createOffer(targetId, targetName) {
+async function createOffer(
+  targetId,
+  targetName
+) {
   const pc =
     createPeerConnection(
       targetId,
@@ -188,36 +225,31 @@ function removePeer(id) {
   }
 
   removeVideoElement(id);
-
   userNames.delete(id);
-  pendingCandidates.delete(id);
 }
 
 async function joinRoom() {
   const roomId =
-    roomInput.value.trim();
+    getRoomIdFromUrl();
 
-  const name =
+  myName =
     nameInput.value.trim();
 
   if (!roomId) {
     homeStatus.textContent =
-      "部屋番号を入力してください。";
+      "部屋IDがありません。";
 
-    roomInput.focus();
     return;
   }
 
-  if (!name) {
+  if (!myName) {
     homeStatus.textContent =
       "名前を入力してください。";
 
     nameInput.focus();
+
     return;
   }
-
-  currentRoomId = roomId;
-  myName = name;
 
   joinButton.disabled = true;
   homeStatus.textContent = "";
@@ -233,7 +265,7 @@ async function joinRoom() {
     call.classList.remove("hidden");
 
     roomUrl.textContent =
-      location.origin;
+      location.href;
 
     createVideoElement(
       "local",
@@ -249,7 +281,7 @@ async function joinRoom() {
     socket.emit(
       "join-room",
       {
-        roomId: currentRoomId,
+        roomId,
         name: myName
       },
       async result => {
@@ -262,7 +294,9 @@ async function joinRoom() {
 
           localStream
             .getTracks()
-            .forEach(track => track.stop());
+            .forEach(track =>
+              track.stop()
+            );
 
           localStream = null;
 
@@ -275,15 +309,13 @@ async function joinRoom() {
         }
 
         /*
-         * 重要：
          * 新しく入った人だけが
-         * 既にいる人へ接続を開始する。
-         *
-         * これで同時Offerによる
-         * 接続衝突を防ぐ。
+         * 既にいる人へOfferを送る。
          */
 
-        for (const user of result.users || []) {
+        for (
+          const user of result.users || []
+        ) {
           userNames.set(
             user.id,
             user.name
@@ -335,20 +367,6 @@ nameInput.addEventListener(
     }
   }
 );
-
-roomInput.addEventListener(
-  "keydown",
-  event => {
-    if (event.key === "Enter") {
-      joinRoom();
-    }
-  }
-);
-
-/*
- * 既存ユーザー側。
- * ここではOfferを作らない。
- */
 
 socket.on(
   "peer-joined",
@@ -430,14 +448,6 @@ socket.on(
       peers.get(from);
 
     if (!peer) {
-      if (!pendingCandidates.has(from)) {
-        pendingCandidates.set(from, []);
-      }
-
-      pendingCandidates
-        .get(from)
-        .push(candidate);
-
       return;
     }
 
@@ -510,7 +520,7 @@ copyLink.addEventListener(
   async () => {
     try {
       await navigator.clipboard.writeText(
-        location.origin
+        location.href
       );
 
       copyLink.textContent =
@@ -523,7 +533,7 @@ copyLink.addEventListener(
 
     } catch {
       alert(
-        "URLをコピーできませんでした。"
+        "URLをコピーできませんでした。アドレスバーからコピーしてください。"
       );
     }
   }
@@ -607,7 +617,9 @@ hangupButton.addEventListener(
     if (localStream) {
       localStream
         .getTracks()
-        .forEach(track => track.stop());
+        .forEach(track =>
+          track.stop()
+        );
     }
 
     location.href = "/";
